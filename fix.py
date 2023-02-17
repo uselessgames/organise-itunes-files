@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
     A script to un-obfuscate itunes music files
-    supports .mp3
+    supports .mp3 and .mp4 (m4a, m4b, m4p)
 """
 
 from logging.handlers import RotatingFileHandler
-from mutagen.easymp4 import EasyMP4Tags
+from mutagen.easymp4 import EasyMP4
 from mutagen.easyid3 import EasyID3
+from re import sub
 import argparse
 import logging
 import os
@@ -35,13 +36,16 @@ def file_copy(copy_source, copy_dest):
   try:
     shutil.copy(copy_source, copy_dest)
     status = f"copied: {copy_dest}"
+    logging.info (status)
     print(status)
-  except shutil.SameFileError:
-    logging.info(f"duplicate, cannot copy: {copy_source}")
-  except PermissionError:
-    logging.info(f"permission denied, did not copy: {copy_source}")
   except:
-    logging.info(f"unhandled exception while copying: {copy_source}")
+    logging.exception(f"unhandled exception while copying: {copy_source}")
+
+def sanitise(string):
+  return sub(r'[?|$|.|!|/|\\]',r'', string)
+
+def fix_tracknumber(track):
+  return sub('(?=/)(.*)',"", track)
 
 def parse_args():
   parser = argparse.ArgumentParser(
@@ -73,14 +77,21 @@ def parse_audio_files(source, out):
   for (root, dirs, files) in os.walk(source, topdown=True):
     for f in files:
       (base, ext) = os.path.splitext(f) 
-      if ext in ('.mp3'):          
-        source_name = os.path.join(root, f)      
-        song = EasyID3(source_name)
-        artist = str(song['artist'][0])
-        album = str(song['album'][0])
-        tracknumber = str(song['tracknumber'][0])
-        title = str(song['title'][0])
-        new_name = f"{artist} - {album} - {tracknumber} - {title}.mp3"
+      if ext in ('.mp3','.mp4','.m4a','.m4b','.m4p'):          
+        source_name = os.path.join(root, f)
+        if ext in ('.mp3'):
+          song = EasyID3(source_name)
+        elif ext in ('.mp4','.m4a','.m4b','.m4p'):
+          song = EasyMP4(source_name)
+        artist = sanitise(f"{song['artist'][0]}")
+        album = sanitise(f"{song['album'][0]}")
+        tracknumber = fix_tracknumber(f"{song['tracknumber'][0]}")
+        title = sanitise(f"{song['title'][0]}")
+        if ext in ('.mp3'):
+          new_name = f"{artist} - {album} - {tracknumber} - {title}.mp3"
+        elif ext in ('.mp4','.m4a','.m4b','.m4p'):
+          new_name = f"{artist} - {album} - {tracknumber} - {title}.m4a"
+        #print(new_name)
         new_folder = os.path.join(out,artist,album)
         new_dest = os.path.join(new_folder,new_name)
         check_tree(new_folder)
@@ -91,17 +102,14 @@ def main():
   setup_logging(
     args.log_path
   )
-  songs = parse_audio_files(args.source_dir, args.out_dir)
-  
+  try:
+    songs = parse_audio_files(args.source_dir, args.out_dir)
+  except:
+    logging.exception("unhandled exception")
+    exit(1)
+
+  logging.info(f"EOF")
   print("finished, check log for errors")
 
 if __name__ == "__main__":
   main()
-
-
-"""
-to-do
-- some mp3 are not copying
-- add mp4 support (m4a, m4b, m4p)
-
-"""
